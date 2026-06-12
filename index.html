@@ -12,6 +12,8 @@
 <title>Inventory & Billing — Staff</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <style>
 /* ============================================================
    Inventory & Customer Billing System — Staff Edition (Mobile)
@@ -232,7 +234,10 @@ select,input[type="number"]{min-height:40px}
     </div>
     <button class="btn btn-o btn-sm" style="margin:8px 16px;width:calc(100% - 32px);" onclick="App.loadDemo()">📋 Load Demo Data</button>
     <button class="btn btn-p btn-sm" style="margin:4px 16px;width:calc(100% - 32px);" onclick="App.installPWA()" id="sidebar-install-btn">📲 Install App</button>
-    <div style="padding:8px 20px;font-size:.68rem;color:var(--text2);margin-top:4px;">Install for offline use. Open from home screen like a native app.</div>
+    <div style="padding:8px 20px;font-size:.68rem;color:var(--text2);margin-top:4px;">
+      <div id="sync-status" style="font-size:.7rem;">☁️ Sync: offline</div>
+    </div>
+    <div style="padding:8px 20px;font-size:.68rem;color:var(--text2);">Install for offline use. Open from home screen like a native app.</div>
   </aside>
 
   <!-- Main content -->
@@ -244,6 +249,7 @@ select,input[type="number"]{min-height:40px}
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
             <button class="btn btn-p btn-sm" onclick="App.showImportModal()">📥 Import</button>
             <button class="btn btn-o btn-sm" onclick="App.recalcAll()">🔄 Refresh</button>
+            <button class="btn btn-d btn-sm" onclick="App.clearAll()">🗑 Clear All</button>
           </div>
         </div>
         <div class="stats-grid" id="prod-stats"></div>
@@ -322,19 +328,84 @@ function isMobile(){return window.innerWidth<1024}
 // ============================================================
 // APP — Global state & entry point (Staff Edition)
 // ============================================================
+// ============================================================
+// FIREBASE CONFIG — Replace with your own Firebase project
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "000000000000",
+  appId: "YOUR_APP_ID"
+};
+
 const App = {
   products: [],
   customers: new Set(),
   currentTab: 0,
+  _firebaseReady: false,
+  _syncing: false,
 
   /** Initialize */
   init(){
+    this.initFirebase();
     this.loadState();
     this.initDarkMode();
     this.initSidebar();
     this.initPWA();
     if(this.products.length>0) this.refreshAll();
     window.addEventListener('resize',()=>this.onResize());
+  },
+
+  // ========== Firebase Cloud Sync ==========
+  initFirebase(){
+    try{
+      if(typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY'){
+        firebase.initializeApp(FIREBASE_CONFIG);
+        this._firebaseReady = true;
+        this._dbRef = firebase.database().ref('shared-data');
+        this._updateSyncStatus('🟢 Live sync');
+        // Listen for remote changes
+        this._dbRef.on('value', snap => {
+          if(this._syncing) return; // Ignore own writes
+          const data = snap.val();
+          if(data && data.products){
+            this.products = data.products;
+            this.customers = new Set(data.customers || []);
+            this.refreshAll();
+            this.toast('🔄 Data synced from cloud','suc');
+          }
+        });
+        console.log('✅ Firebase connected — multi-user sync enabled');
+      } else {
+        this._updateSyncStatus('🔴 Offline');
+        console.log('ℹ️ Firebase not configured — using offline mode');
+      }
+    }catch(e){
+      this._updateSyncStatus('🔴 Offline');
+      console.warn('Firebase init failed, using offline mode:', e.message);
+    }
+  },
+
+  _updateSyncStatus(text){
+    let el = document.getElementById('sync-status');
+    if(el) el.innerHTML = '☁️ Sync: ' + text;
+  },
+
+  /** Push current state to Firebase */
+  pushToCloud(){
+    if(!this._firebaseReady || !this._dbRef) return;
+    try{
+      this._syncing = true;
+      this._dbRef.set({
+        products: this.products,
+        customers: [...this.customers],
+        savedAt: new Date().toISOString()
+      });
+      setTimeout(()=>{ this._syncing = false; }, 500);
+    }catch(e){ console.warn('Cloud sync failed:', e.message); }
   },
 
   // ========== PWA Install & Offline ==========
@@ -544,14 +615,36 @@ const App = {
     this.toast('✅ Loaded 8 products & 3 customers (demo data)','suc');
   },
 
-  // ========== State Persistence ==========
+  // ========== State Persistence (Cloud + Local) ==========
   saveState(){
+    // Always save to localStorage as offline backup
     try{
       let d={products:this.products,customers:[...this.customers],savedAt:new Date().toISOString()};
       localStorage.setItem('ios_state',JSON.stringify(d));
-    }catch(e){console.warn('Storage full')}
+    }catch(e){console.warn('Local storage full')}
+    // Push to Firebase for multi-user sync
+    this.pushToCloud();
   },
   loadState(){
+    // First try Firebase (multi-user data)
+    if(this._firebaseReady && this._dbRef){
+      this._dbRef.once('value').then(snap => {
+        const data = snap.val();
+        if(data && data.products){
+          this.products = data.products;
+          this.customers = new Set(data.customers || []);
+          this.products.forEach(p=>{if(!p.orders)p.orders={};if(!p._id)p._id=uid()});
+          this.refreshAll();
+          return;
+        }
+        // Cloud empty, try localStorage
+        this._loadLocalState();
+      }).catch(()=>{ this._loadLocalState(); });
+    } else {
+      this._loadLocalState();
+    }
+  },
+  _loadLocalState(){
     try{
       let raw=localStorage.getItem('ios_state');
       if(raw){
@@ -559,8 +652,11 @@ const App = {
         this.products=d.products||[];
         this.customers=new Set(d.customers||[]);
         this.products.forEach(p=>{if(!p.orders)p.orders={};if(!p._id)p._id=uid()});
+        this.refreshAll();
+        // Push local data to cloud so others can see it
+        if(this._firebaseReady) this.pushToCloud();
       }
-    }catch(e){console.warn('Load failed')}
+    }catch(e){console.warn('Local load failed')}
   },
 
   // ========== Refresh All ==========
@@ -614,6 +710,15 @@ const App = {
   },
 
   recalcAll(){this.renderProducts();this.renderOrders();this.updateSidebar();this.toast('✅ All data refreshed','suc')},
+
+  clearAll(){
+    if(!confirm('Delete ALL products and customers? This cannot be undone.')) return;
+    this.products=[];
+    this.customers=new Set();
+    this.saveState();
+    this.refreshAll();
+    this.toast('🗑 All data cleared','suc');
+  },
 
   // ========== Import ==========
   showImportModal(){
@@ -770,14 +875,13 @@ const App = {
       document.getElementById('order-table').innerHTML='<div class="empty-state"><p>No product data</p></div>';
       return;
     }
-    // Build order table — only Code, Stock & Order Qty
-    let h='<table class="ft"><thead><tr><th>Code</th><th>Stock</th><th>Order Qty</th></tr></thead><tbody>';
+    // Build order table — only Code & Order Qty
+    let h='<table class="ft"><thead><tr><th>Code</th><th>Order Qty</th></tr></thead><tbody>';
     ps.forEach((p,i)=>{
       let q=this.getOrderQty(p,cust);
       let rowStyle=q>0?'':'opacity:0.45';
       h+='<tr style="'+rowStyle+'">'+
         '<td>'+this._esc(p.code)+'</td>'+
-        '<td class="amt">'+p.stock.toLocaleString()+'</td>'+
         '<td style="white-space:nowrap">'+
           '<input class="qt" type="number" value="'+q+'" min="0" step="1" '+
           'onchange="App.updateOrder('+i+',\''+this._jsq(cust)+'\',this.value)" '+
@@ -786,7 +890,7 @@ const App = {
         '</td>'+
       '</tr>';
     });
-    h+='<tr class="summary-row"><td colspan="2">Total</td><td class="amt">'+totalQty.toLocaleString()+'</td></tr>';
+    h+='<tr class="summary-row"><td>Total</td><td class="amt">'+totalQty.toLocaleString()+'</td></tr>';
     h+='</tbody></table>';
     document.getElementById('order-table').innerHTML=h;
   },
@@ -867,7 +971,7 @@ const App = {
         '<h2 style="margin:0;font-size:1.1rem;">Goods Delivery Bill</h2>'+
         '<p style="color:var(--text2);margin:4px 0;font-size:.82rem;">Customer: <strong>'+this._esc(cust)+'</strong> &nbsp;|&nbsp; '+now+' &nbsp;|&nbsp; '+billNo+'</p>'+
       '</div>'+
-      '<div class="tbl-wrap" style="max-height:none;"><table class="ft"><thead><tr><th>#</th><th>Code</th><th>Product</th><th>Unit Price</th><th>Qty</th><th>Amount</th></tr></thead><tbody>';
+      '<div class="tbl-wrap" style="max-height:none;"><table class="ft"><thead><tr><th>#</th><th>货号</th><th>产品名</th><th>Unit Price</th><th>Qty</th><th>Amount</th></tr></thead><tbody>';
     items.forEach((p,i)=>{
       let q=this.getOrderQty(p,cust);
       let sub=q*p.unitPrice;
@@ -913,7 +1017,7 @@ const App = {
     let items=this.products.filter(p=>this.getOrderQty(p,cust)>0);
     if(!items.length){this.toast('No orders for this customer','warn');return;}
     let totalQty=0,totalVal=0;
-    let rows=[['#','Code','Product','Unit Price','Qty','Amount']];
+    let rows=[['#','货号','产品名','Unit Price','Qty','Amount']];
     items.forEach((p,i)=>{
       let q=this.getOrderQty(p,cust);
       let sub=q*p.unitPrice;totalQty+=q;totalVal+=sub;
