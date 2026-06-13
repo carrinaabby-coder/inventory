@@ -226,6 +226,7 @@ select,input[type="number"]{min-height:40px}
     <div class="menu-item active" onclick="App.switchTab(0)">📋 Products</div>
     <div class="menu-item" onclick="App.switchTab(1)">👥 Orders</div>
     <div class="menu-item" onclick="App.switchTab(2)">🧾 Billing</div>
+    <div class="menu-item" onclick="App.switchTab(3)">🚚 Delivery</div>
     <hr style="border-color:var(--border);margin:8px 16px;">
     <div style="padding:8px 20px;font-size:.75rem;color:var(--text2);">
       <div>📦 Products: <span id="s-count">0</span></div>
@@ -284,13 +285,29 @@ select,input[type="number"]{min-height:40px}
         <div class="card-h"><h2>🧾 Generate Bill</h2></div>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
           <label style="font-weight:600;white-space:nowrap;">Customer:</label>
-          <select id="bill-cust" onchange="App.renderBill()" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--surface);color:var(--text);min-width:180px;flex:1;">
+          <select id="bill-cust" onchange="App.renderBillAndDelivery()" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--surface);color:var(--text);min-width:180px;flex:1;">
             <option value="">-- Select --</option>
           </select>
           <button class="btn btn-p btn-sm" onclick="App.exportBill()">📤 Export Bill</button>
           <button class="btn btn-o btn-sm" onclick="window.print()">🖨 Print</button>
         </div>
         <div id="bill-content" class="tbl-wrap" style="max-height:none;"></div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Delivery -->
+    <div id="tab-3" class="fade-in" style="display:none;">
+      <div class="card">
+        <div class="card-h"><h2>🚚 Delivery Note</h2></div>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+          <label style="font-weight:600;white-space:nowrap;">Customer:</label>
+          <select id="delivery-cust" onchange="App.renderDelivery()" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--surface);color:var(--text);min-width:180px;flex:1;">
+            <option value="">-- Select --</option>
+          </select>
+          <button class="btn btn-p btn-sm" onclick="App.exportDelivery()">📤 Export Delivery</button>
+          <button class="btn btn-o btn-sm" onclick="window.print()">🖨 Print</button>
+        </div>
+        <div id="delivery-content" class="tbl-wrap" style="max-height:none;"></div>
       </div>
     </div>
   </main>
@@ -569,11 +586,12 @@ const App = {
   // ========== Tabs ==========
   switchTab(idx){
     this.currentTab=idx;
-    for(let i=0;i<3;i++) document.getElementById('tab-'+i).style.display=i===idx?'':'none';
+    for(let i=0;i<4;i++) document.getElementById('tab-'+i).style.display=i===idx?'':'none';
     document.querySelectorAll('.sidebar .menu-item').forEach((el,i)=>el.classList.toggle('active',i===idx));
     if(idx===0) this.renderProducts();
     if(idx===1) this.renderOrders();
     if(idx===2) this.renderBillSelect();
+    if(idx===3) this.renderDeliverySelect();
     document.getElementById('main').scrollTop=0;
     if(isMobile()) this.closeSidebar();
   },
@@ -665,6 +683,7 @@ const App = {
     if(this.currentTab===0) this.renderProducts();
     if(this.currentTab===1) this.renderOrders();
     if(this.currentTab===2) this.renderBillSelect();
+    if(this.currentTab===3) this.renderDeliverySelect();
   },
   updateSidebar(){
     document.getElementById('s-count').textContent=this.products.length;
@@ -881,7 +900,7 @@ const App = {
       let q=this.getOrderQty(p,cust);
       let rowStyle=q>0?'':'opacity:0.45';
       h+='<tr style="'+rowStyle+'">'+
-        '<td>'+this._esc(p.code)+'</td>'+
+        '<td style="color:var(--text);font-weight:500">'+this._esc(p.code)+'</td>'+
         '<td style="white-space:nowrap">'+
           '<input class="qt" type="number" value="'+q+'" min="0" step="1" '+
           'onchange="App.updateOrder('+i+',\''+this._jsq(cust)+'\',this.value)" '+
@@ -941,20 +960,30 @@ const App = {
     let cust=document.getElementById('cust-select').value;
     if(!cust){this.toast('Please select a customer first','warn');return;}
     this.currentTab=2;
-    for(let i=0;i<3;i++) document.getElementById('tab-'+i).style.display=i===2?'':'none';
+    for(let i=0;i<4;i++) document.getElementById('tab-'+i).style.display=i===2?'':'none';
     document.querySelectorAll('.sidebar .menu-item').forEach((el,i)=>el.classList.toggle('active',i===2));
     let billSel=document.getElementById('bill-cust');
     billSel.innerHTML='<option value="">-- Select --</option>'+[...this.customers].map(c=>'<option value="'+this._esc(c)+'" '+(c===cust?'selected':'')+'>'+this._esc(c)+'</option>').join('');
-    this.renderBill();
+    this.renderBillAndDelivery();
     document.getElementById('main').scrollTop=0;
     if(isMobile()) this.closeSidebar();
   },
 
-  // ========== Tab 2: Billing ==========
+  // ========== Tab 2 & 3: Billing + Delivery (linked) ==========
   renderBillSelect(){
     let sel=document.getElementById('bill-cust');
     sel.innerHTML='<option value="">-- Select --</option>'+[...this.customers].map(c=>'<option value="'+this._esc(c)+'">'+this._esc(c)+'</option>').join('');
     document.getElementById('bill-content').innerHTML='<div class="empty-state"><div class="icon">🧾</div><p>Select a customer to preview the bill</p></div>';
+  },
+
+  /** Render both Bill and Delivery simultaneously when customer selected in Billing */
+  renderBillAndDelivery(){
+    this.renderBill();
+    // Sync delivery customer selector and render
+    let billCust=document.getElementById('bill-cust').value;
+    let delSel=document.getElementById('delivery-cust');
+    if(delSel) delSel.value=billCust;
+    this.renderDelivery();
   },
 
   renderBill(){
@@ -1008,6 +1037,68 @@ const App = {
         '<div>Prepared by: ___________</div><div>Reviewed by: ___________</div><div>Received by: ___________</div>'+
       '</div></div>';
     document.getElementById('bill-content').innerHTML=h;
+  },
+
+  // ========== Tab 3: Delivery Note (simplified — only 货号, Qty, Total Qty) ==========
+  renderDeliverySelect(){
+    let sel=document.getElementById('delivery-cust');
+    sel.innerHTML='<option value="">-- Select --</option>'+[...this.customers].map(c=>'<option value="'+this._esc(c)+'">'+this._esc(c)+'</option>').join('');
+    document.getElementById('delivery-content').innerHTML='<div class="empty-state"><div class="icon">🚚</div><p>Select a customer to generate delivery note</p></div>';
+  },
+
+  renderDelivery(){
+    let cust=document.getElementById('delivery-cust').value;
+    if(!cust){document.getElementById('delivery-content').innerHTML='<div class="empty-state"><div class="icon">🚚</div><p>Please select a customer</p></div>';return;}
+    let items=this.products.filter(p=>this.getOrderQty(p,cust)>0);
+    if(!items.length){document.getElementById('delivery-content').innerHTML='<div class="empty-state"><p>No orders for this customer</p></div>';return;}
+    let totalQty=0;
+    items.forEach(p=>{totalQty+=this.getOrderQty(p,cust)});
+    let now=new Date().toLocaleDateString('en-US');
+    let dnNo='DN-'+Date.now().toString(36).toUpperCase();
+    let h='<div style="border:2px solid var(--border);border-radius:var(--radius-lg);padding:16px;background:var(--surface);" id="delivery-print">'+
+      '<div style="text-align:center;margin-bottom:16px;">'+
+        '<h2 style="margin:0;font-size:1.1rem;">🚚 Delivery Note</h2>'+
+        '<p style="color:var(--text2);margin:4px 0;font-size:.82rem;">Customer: <strong>'+this._esc(cust)+'</strong> &nbsp;|&nbsp; '+now+' &nbsp;|&nbsp; '+dnNo+'</p>'+
+      '</div>'+
+      '<div class="tbl-wrap" style="max-height:none;"><table class="ft"><thead><tr><th>#</th><th>货号</th><th>Qty</th><th>Total Qty</th></tr></thead><tbody>';
+    let runningTotal=0;
+    items.forEach((p,i)=>{
+      let q=this.getOrderQty(p,cust);
+      runningTotal+=q;
+      h+='<tr><td>'+(i+1)+'</td><td><strong>'+this._esc(p.code)+'</strong></td><td class="amt">'+q.toLocaleString()+'</td><td class="amt">'+runningTotal.toLocaleString()+'</td></tr>';
+    });
+    h+='<tr class="summary-row"><td colspan="2">Total</td><td class="amt">'+totalQty.toLocaleString()+'</td><td class="amt">'+totalQty.toLocaleString()+'</td></tr>';
+    h+='</tbody></table></div>'+
+      '<div style="display:flex;justify-content:center;margin-top:14px;gap:20px;font-size:.85rem;flex-wrap:wrap;">'+
+        '<div><span style="color:var(--text2);">Total Items: </span><strong>'+items.length+'</strong></div>'+
+        '<div><span style="color:var(--text2);">Grand Total Qty: </span><strong style="font-size:1.15rem;color:var(--pri);">'+totalQty.toLocaleString()+'</strong></div>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:center;margin-top:24px;font-size:.78rem;flex-wrap:wrap;gap:24px;">'+
+        '<div>Prepared by: ___________</div><div>Reviewed by: ___________</div><div>Received by: ___________</div>'+
+      '</div></div>';
+    document.getElementById('delivery-content').innerHTML=h;
+  },
+
+  /** Export delivery note to Excel */
+  exportDelivery(){
+    let cust=document.getElementById('delivery-cust').value;
+    if(!cust){this.toast('Please select a customer first','warn');return;}
+    let items=this.products.filter(p=>this.getOrderQty(p,cust)>0);
+    if(!items.length){this.toast('No orders for this customer','warn');return;}
+    let totalQty=0,runningTotal=0;
+    let rows=[['#','货号','Qty','Total Qty']];
+    items.forEach((p,i)=>{
+      let q=this.getOrderQty(p,cust);
+      totalQty+=q;runningTotal+=q;
+      rows.push([i+1,p.code,q,runningTotal]);
+    });
+    rows.push(['','Total',totalQty,totalQty]);
+    let ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:6},{wch:14},{wch:10},{wch:12}];
+    let wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Delivery_'+cust);
+    XLSX.writeFile(wb,'Delivery_'+cust+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    this.toast('✅ Delivery note exported','suc');
   },
 
   /** Export bill to Excel */
@@ -1070,6 +1161,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   console.log('  - 📋 Product inventory viewing');
   console.log('  - 👥 Customer order management');
   console.log('  - 🧾 Bill preview & export');
+  console.log('  - 🚚 Delivery note (货号 / Qty / Total Qty)');
 });
 </script>
 </body>
