@@ -1004,7 +1004,7 @@ const App = {
     items.forEach((p,i)=>{
       let q=this.getOrderQty(p,cust);
       let sub=q*p.unitPrice;
-      h+='<tr><td>'+(i+1)+'</td><td>'+this._esc(p.code)+'</td><td>'+this._esc(p.name)+'</td><td class="amt">Sh.'+fmt(p.unitPrice)+'</td><td class="amt">'+q.toLocaleString()+'</td><td class="amt calc">Sh.'+fmt(sub)+'</td></tr>';
+      h+='<tr style="font-weight:600;"><td>'+(i+1)+'</td><td>'+this._esc(p.code)+'</td><td>'+this._esc(p.name)+'</td><td class="amt">Sh.'+fmt(p.unitPrice)+'</td><td class="amt">'+q.toLocaleString()+'</td><td class="amt calc">Sh.'+fmt(sub)+'</td></tr>';
     });
     // Number-to-words (English)
     function toWords(num){
@@ -1060,14 +1060,12 @@ const App = {
         '<h2 style="margin:0;font-size:1.1rem;">🚚 Delivery Note</h2>'+
         '<p style="color:var(--text2);margin:4px 0;font-size:.82rem;">Customer: <strong>'+this._esc(cust)+'</strong> &nbsp;|&nbsp; '+now+' &nbsp;|&nbsp; '+dnNo+'</p>'+
       '</div>'+
-      '<div class="tbl-wrap" style="max-height:none;"><table class="ft"><thead><tr><th>#</th><th>货号</th><th>Qty</th><th>Total Qty</th></tr></thead><tbody>';
-    let runningTotal=0;
+      '<div class="tbl-wrap" style="max-height:none;"><table class="ft"><thead><tr><th>#</th><th>货号</th><th>Qty</th></tr></thead><tbody>';
     items.forEach((p,i)=>{
       let q=this.getOrderQty(p,cust);
-      runningTotal+=q;
-      h+='<tr><td>'+(i+1)+'</td><td><strong>'+this._esc(p.code)+'</strong></td><td class="amt">'+q.toLocaleString()+'</td><td class="amt">'+runningTotal.toLocaleString()+'</td></tr>';
+      h+='<tr style="font-weight:600;"><td>'+(i+1)+'</td><td>'+this._esc(p.code)+'</td><td class="amt">'+q.toLocaleString()+'</td></tr>';
     });
-    h+='<tr class="summary-row"><td colspan="2">Total</td><td class="amt">'+totalQty.toLocaleString()+'</td><td class="amt">'+totalQty.toLocaleString()+'</td></tr>';
+    h+='<tr class="summary-row"><td colspan="2">Total</td><td class="amt">'+totalQty.toLocaleString()+'</td></tr>';
     h+='</tbody></table></div>'+
       '<div style="display:flex;justify-content:center;margin-top:14px;gap:20px;font-size:.85rem;flex-wrap:wrap;">'+
         '<div><span style="color:var(--text2);">Total Items: </span><strong>'+items.length+'</strong></div>'+
@@ -1085,16 +1083,16 @@ const App = {
     if(!cust){this.toast('Please select a customer first','warn');return;}
     let items=this.products.filter(p=>this.getOrderQty(p,cust)>0);
     if(!items.length){this.toast('No orders for this customer','warn');return;}
-    let totalQty=0,runningTotal=0;
-    let rows=[['#','货号','Qty','Total Qty']];
+    let totalQty=0;
+    let rows=[['#','货号','Qty']];
     items.forEach((p,i)=>{
       let q=this.getOrderQty(p,cust);
-      totalQty+=q;runningTotal+=q;
-      rows.push([i+1,p.code,q,runningTotal]);
+      totalQty+=q;
+      rows.push([i+1,p.code,q]);
     });
-    rows.push(['','Total',totalQty,totalQty]);
+    rows.push(['','Total',totalQty]);
     let ws=XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols']=[{wch:6},{wch:14},{wch:10},{wch:12}];
+    ws['!cols']=[{wch:6},{wch:14},{wch:10}];
     let wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'Delivery_'+cust);
     XLSX.writeFile(wb,'Delivery_'+cust+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
