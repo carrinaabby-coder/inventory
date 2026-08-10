@@ -195,9 +195,9 @@ select,input[type="number"]{min-height:40px}
 .payment-panel .summary-row td{font-size:.7rem!important}
 .payment-panel .pay-inp{max-width:100%!important;width:100%!important;min-height:30px!important;font-size:.7rem!important;padding:4px 6px!important}
 .payment-summary{margin-top:8px;padding:8px 10px;border-radius:6px;line-height:1.5}
-.payment-summary-row{display:flex;justify-content:space-between;align-items:center;font-size:.72rem;gap:6px;flex-wrap:wrap}
+.payment-summary-row{display:flex;justify-content:space-between;align-items:center;font-size:.68rem;gap:4px;flex-wrap:wrap}
 .payment-summary-row+.payment-summary-row{margin-top:2px}
-.payment-summary-row .bal-amt{width:100%;text-align:right;font-size:.78rem}
+.payment-summary-row .bal-amt{width:100%;text-align:right;font-size:.72rem}
 
 /* Payment tab — mobile */
 @media(max-width:640px){
@@ -217,7 +217,7 @@ select,input[type="number"]{min-height:40px}
   .payment-panel .ft th{font-size:.6rem!important;padding:3px 2px!important}
   .payment-panel .ft td{font-size:.65rem;padding:3px 2px!important}
   .payment-panel .pay-inp{font-size:.65rem!important;min-height:28px!important}
-  .payment-summary-row{font-size:.68rem}
+  .payment-summary-row{font-size:.62rem}
 }
 
 /* Desktop: modal centered */
@@ -1233,12 +1233,11 @@ const App = {
 	    // Right Panel: Payment Records + Summary
 	    h+='<div class="payment-panel">'+
 	      '<h3>💵 Payment</h3>'+
-	      '<table class="ft pay-tbl" style="min-width:auto;"><thead><tr><th style="width:22px;">#</th><th style="text-align:right;">Amount</th></tr></thead><tbody>';
+	      '<table class="ft pay-tbl" style="min-width:auto;"><thead><tr><th style="text-align:right;">Amount</th></tr></thead><tbody>';
 
 	    for(let i=0;i<7;i++){
 	      let val=slots[i]||0;
 	      h+='<tr>'+
-	        '<td style="font-weight:600;color:var(--text);">'+(i+1)+'</td>'+
 	        '<td style="padding:3px 4px;text-align:right;">'+
 	          '<span style="font-size:.68rem;color:var(--text2);">Sh.</span>'+
 	          '<input class="qt pay-inp" type="number" value="'+(val>0?val:'')+'" min="0" step="0.01" placeholder="0.00" '+
