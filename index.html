@@ -185,6 +185,19 @@ select,input[type="number"]{min-height:40px}
   .btn{min-height:38px;padding:8px 12px;font-size:.75rem}
 }
 
+/* ========== Payment Tab — Two-Panel Layout ========== */
+.payment-panels{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.payment-panel{background:var(--surface);border-radius:var(--radius);padding:10px;border:1px solid var(--border);overflow:hidden}
+.payment-panel h3{margin:0 0 6px 0!important;font-size:.8rem!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.payment-panel .ft{min-width:auto!important;font-size:.7rem}
+.payment-panel .ft th{font-size:.65rem!important;padding:4px 3px!important}
+.payment-panel .ft td{padding:4px 3px!important;font-size:.7rem}
+.payment-panel .summary-row td{font-size:.7rem!important}
+.payment-panel .pay-inp{max-width:100%!important;width:100%!important;min-height:30px!important;font-size:.7rem!important;padding:4px 6px!important}
+.payment-summary{margin-top:8px;padding:8px 10px;border-radius:6px;line-height:1.5}
+.payment-summary-row{display:flex;justify-content:space-between;align-items:center;font-size:.72rem;gap:6px}
+.payment-summary-row+.payment-summary-row{margin-top:2px}
+
 /* Payment tab — mobile */
 @media(max-width:640px){
   .pay-inp{max-width:100px!important;font-size:.78rem!important}
@@ -197,6 +210,13 @@ select,input[type="number"]{min-height:40px}
 @media(max-width:380px){
   .pay-inp{max-width:80px!important;font-size:.72rem!important}
   .pay-tbl th{font-size:.62rem!important}
+  .payment-panels{gap:6px}
+  .payment-panel{padding:8px}
+  .payment-panel .ft{font-size:.65rem}
+  .payment-panel .ft th{font-size:.6rem!important;padding:3px 2px!important}
+  .payment-panel .ft td{font-size:.65rem;padding:3px 2px!important}
+  .payment-panel .pay-inp{font-size:.65rem!important;min-height:28px!important}
+  .payment-summary-row{font-size:.68rem}
 }
 
 /* Desktop: modal centered */
@@ -1173,7 +1193,6 @@ const App = {
 	    let items=this.products.filter(p=>this.getOrderQty(p,cust)>0);
 	    if(!items.length){document.getElementById('payment-content').innerHTML='<div class="empty-state"><p>No orders for this customer</p></div>';return;}
 
-	    let totalPkgs=items.length;
 	    let totalQty=0,totalAmt=0;
 	    items.forEach(p=>{let q=this.getOrderQty(p,cust);totalQty+=q;totalAmt+=q*p.unitPrice});
 	    totalAmt=Math.round(totalAmt*100)/100;
@@ -1190,64 +1209,62 @@ const App = {
 	    paidTotal=Math.round(paidTotal*100)/100;
 	    let balance=Math.round((totalAmt-paidTotal)*100)/100;
 
-	    let h='';
-	    // --- Step 1: Order Summary Stats ---
-	    h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">'+
-	      '<div class="stat-card"><div class="sv">'+totalPkgs+'</div><div class="sl">📦 Total Packages</div></div>'+
-	      '<div class="stat-card"><div class="sv">'+totalQty.toLocaleString()+'</div><div class="sl">📋 Total Qty</div></div>'+
-	      '<div class="stat-card" style="border-left-color:var(--pri);"><div class="sv" style="color:var(--pri);">Sh.'+fmt(totalAmt)+'</div><div class="sl">💰 Total Amount Payable</div></div>'+
-	    '</div>';
+	    let diffLabel=balance>0?'Balance Due':(balance<0?'Overpaid':'Settled');
+	    let diffColor=balance>0?'var(--danger)':(balance<0?'var(--suc)':'var(--text2)');
+	    let absBal=Math.abs(balance);
 
-	    // --- Step 2: Order Detail Table ---
-	    h+='<h3 style="margin:0 0 8px 0;font-size:.85rem;">📋 Order Details</h3>'+
-	      '<div class="tbl-wrap" style="max-height:40vh;margin-bottom:16px;"><table class="ft"><thead><tr><th>#</th><th>Code</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>';
+	    let h='';
+	    // --- Two-Panel Layout: Order Details (left) + Payment Records (right) ---
+	    h+='<div class="payment-panels">';
+
+	    // Left Panel: Order Details (compact)
+	    h+='<div class="payment-panel">'+
+	      '<h3>📋 Order Details</h3>'+
+	      '<div class="tbl-wrap" style="max-height:none;"><table class="ft"><thead><tr><th>Code</th><th>Qty</th><th>Amt</th></tr></thead><tbody>';
 	    items.forEach((p,i)=>{
 	      let q=this.getOrderQty(p,cust);
 	      let sub=q*p.unitPrice;
-	      h+='<tr><td>'+(i+1)+'</td><td>'+this._esc(p.code)+'</td><td class="amt">'+q.toLocaleString()+'</td><td class="amt">Sh.'+fmt(p.unitPrice)+'</td><td class="amt calc">Sh.'+fmt(sub)+'</td></tr>';
+	      h+='<tr><td style="font-weight:500;">'+this._esc(p.code)+'</td><td class="amt">'+q.toLocaleString()+'</td><td class="amt calc">Sh.'+fmt(sub)+'</td></tr>';
 	    });
-	    h+='<tr class="summary-row"><td colspan="2">Total</td><td class="amt">'+totalQty.toLocaleString()+'</td><td></td><td class="amt">Sh.'+fmt(totalAmt)+'</td></tr>';
-	    h+='</tbody></table></div>';
+	    h+='<tr class="summary-row"><td><strong>Total</strong></td><td class="amt">'+totalQty.toLocaleString()+'</td><td class="amt">Sh.'+fmt(totalAmt)+'</td></tr>';
+	    h+='</tbody></table></div></div>';
 
-	    // --- Step 3: Payment Records (8 slots) ---
-	    h+='<div style="background:var(--surface);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px;border:1px solid var(--border);">'+
-	      '<h3 style="margin:0 0 12px 0;font-size:.9rem;">💵 Payment Records</h3>'+
-	      '<table class="ft pay-tbl" style="min-width:auto;"><thead><tr><th style="width:32px;">#</th><th style="text-align:right;">Amount Paid</th></tr></thead><tbody>';
+	    // Right Panel: Payment Records + Summary
+	    h+='<div class="payment-panel">'+
+	      '<h3>💵 Payment</h3>'+
+	      '<table class="ft pay-tbl" style="min-width:auto;"><thead><tr><th style="width:22px;">#</th><th style="text-align:right;">Amount</th></tr></thead><tbody>';
 
 	    for(let i=0;i<8;i++){
 	      let val=slots[i]||0;
 	      h+='<tr>'+
 	        '<td style="font-weight:600;color:var(--text);">'+(i+1)+'</td>'+
-	        '<td style="padding:4px 8px;text-align:right;">'+
-	          '<span style="font-size:.8rem;color:var(--text2);margin-right:6px;">Sh.</span>'+
+	        '<td style="padding:3px 4px;text-align:right;">'+
+	          '<span style="font-size:.68rem;color:var(--text2);">Sh.</span>'+
 	          '<input class="qt pay-inp" type="number" value="'+(val>0?val:'')+'" min="0" step="0.01" placeholder="0.00" '+
 	            'onchange="App.updatePaymentSlot(\''+this._jsq(cust)+'\','+i+',this.value)" '+
 	            'onblur="App.updatePaymentSlot(\''+this._jsq(cust)+'\','+i+',this.value)" '+
 	            'onfocus="this.select()" inputmode="decimal" '+
-	            'style="max-width:130px;width:100%;text-align:right;font-weight:600;">'+
+	            'style="text-align:right;font-weight:600;">'+
 	        '</td>'+
 	      '</tr>';
 	    }
 
-	    h+='</tbody></table></div>';
+	    h+='</tbody></table>';
 
-	    // --- Step 4: Summary ---
-	    let diffLabel=balance>0?'Balance Due':(balance<0?'Overpaid':'Settled');
-	    let diffColor=balance>0?'var(--danger)':(balance<0?'var(--suc)':'var(--text2)');
-	    let absBal=Math.abs(balance);
-
-	    h+='<div style="background:var(--surface);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px;border:2px solid '+(balance===0?'var(--suc)':(balance>0?'var(--danger)':'var(--warn)'))+';">'+
-	      '<table class="ft pay-sum" style="min-width:auto;"><tbody>'+
-	        '<tr>'+
-	          '<td style="text-align:right;font-weight:700;font-size:.9rem;width:50%;">Total Paid</td>'+
-	          '<td class="amt" style="font-weight:800;font-size:1rem;color:'+(paidTotal>0?'var(--suc)':'var(--text2)')+';">Sh.'+fmt(paidTotal)+'</td>'+
-	        '</tr>'+
-	        '<tr>'+
-	          '<td style="text-align:right;font-weight:700;font-size:.9rem;color:'+diffColor+';">'+diffLabel+'</td>'+
-	          '<td class="amt" style="font-weight:800;font-size:1rem;color:'+diffColor+';">Sh.'+fmt(absBal)+'</td>'+
-	        '</tr>'+
-	      '</tbody></table>'+
+	    // Inline summary inside right panel
+	    h+='<div class="payment-summary" style="background:'+(balance===0?'var(--suc-bg)':(balance>0?'var(--dan-bg)':'var(--warn-bg)'))+';">'+
+	      '<div class="payment-summary-row">'+
+	        '<span style="font-weight:600;">Paid:</span>'+
+	        '<span style="font-weight:700;color:'+(paidTotal>0?'var(--suc)':'var(--text2)')+';">Sh.'+fmt(paidTotal)+'</span>'+
+	      '</div>'+
+	      '<div class="payment-summary-row">'+
+	        '<span style="font-weight:600;color:'+diffColor+';">'+diffLabel+':</span>'+
+	        '<span style="font-weight:700;color:'+diffColor+';">Sh.'+fmt(absBal)+'</span>'+
+	      '</div>'+
 	    '</div>';
+
+	    h+='</div>'; // end right panel
+	    h+='</div>'; // end payment-panels
 
 	    document.getElementById('payment-content').innerHTML=h;
 	  },
