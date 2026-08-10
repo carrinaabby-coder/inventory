@@ -195,8 +195,9 @@ select,input[type="number"]{min-height:40px}
 .payment-panel .summary-row td{font-size:.7rem!important}
 .payment-panel .pay-inp{max-width:100%!important;width:100%!important;min-height:30px!important;font-size:.7rem!important;padding:4px 6px!important}
 .payment-summary{margin-top:8px;padding:8px 10px;border-radius:6px;line-height:1.5}
-.payment-summary-row{display:flex;justify-content:space-between;align-items:center;font-size:.72rem;gap:6px}
+.payment-summary-row{display:flex;justify-content:space-between;align-items:center;font-size:.72rem;gap:6px;flex-wrap:wrap}
 .payment-summary-row+.payment-summary-row{margin-top:2px}
+.payment-summary-row .bal-amt{width:100%;text-align:right;font-size:.78rem}
 
 /* Payment tab — mobile */
 @media(max-width:640px){
@@ -1200,9 +1201,9 @@ const App = {
 	    // Load saved 8-slot payment array
 	    let paymentKey='pay_'+cust;
 	    let savedPayments=this._paymentData||{};
-	    let slots=savedPayments[paymentKey]||[0,0,0,0,0,0,0,0];
-	    while(slots.length<8)slots.push(0);
-	    if(slots.length>8)slots=slots.slice(0,8);
+	    let slots=savedPayments[paymentKey]||[0,0,0,0,0,0,0];
+	    while(slots.length<7)slots.push(0);
+	    if(slots.length>7)slots=slots.slice(0,7);
 
 	    let paidTotal=0;
 	    slots.forEach(v=>{paidTotal+=parseAmt(v||0);});
@@ -1234,7 +1235,7 @@ const App = {
 	      '<h3>💵 Payment</h3>'+
 	      '<table class="ft pay-tbl" style="min-width:auto;"><thead><tr><th style="width:22px;">#</th><th style="text-align:right;">Amount</th></tr></thead><tbody>';
 
-	    for(let i=0;i<8;i++){
+	    for(let i=0;i<7;i++){
 	      let val=slots[i]||0;
 	      h+='<tr>'+
 	        '<td style="font-weight:600;color:var(--text);">'+(i+1)+'</td>'+
@@ -1259,7 +1260,7 @@ const App = {
 	      '</div>'+
 	      '<div class="payment-summary-row">'+
 	        '<span style="font-weight:600;color:'+diffColor+';">'+diffLabel+':</span>'+
-	        '<span style="font-weight:700;color:'+diffColor+';">Sh.'+fmt(absBal)+'</span>'+
+	        '<span class="bal-amt" style="font-weight:700;color:'+diffColor+';">Sh.'+fmt(absBal)+'</span>'+
 	      '</div>'+
 	    '</div>';
 
@@ -1273,7 +1274,7 @@ const App = {
 	  updatePaymentSlot(cust,idx,val){
 	    if(!this._paymentData)this._paymentData={};
 	    let key='pay_'+cust;
-	    if(!this._paymentData[key])this._paymentData[key]=[0,0,0,0,0,0,0,0];
+	    if(!this._paymentData[key])this._paymentData[key]=[0,0,0,0,0,0,0];
 	    let amt=parseAmt(val);
 	    if(isNaN(amt)||amt<0)amt=0;
 	    this._paymentData[key][idx]=Math.round(amt*100)/100;
