@@ -185,6 +185,20 @@ select,input[type="number"]{min-height:40px}
   .btn{min-height:38px;padding:8px 12px;font-size:.75rem}
 }
 
+/* Payment tab — mobile */
+@media(max-width:640px){
+  .pay-inp{max-width:100px!important;font-size:.78rem!important}
+  .pay-tbl td{padding:4px 4px!important}
+  .pay-tbl th{font-size:.68rem!important;padding:4px 4px!important}
+  .pay-tbl .pay-inp{min-height:34px!important}
+  .pay-sum td{padding:6px 8px!important;font-size:.8rem!important}
+  .pay-sum .amt{font-size:.85rem!important}
+}
+@media(max-width:380px){
+  .pay-inp{max-width:80px!important;font-size:.72rem!important}
+  .pay-tbl th{font-size:.62rem!important}
+}
+
 /* Desktop: modal centered */
 @media(min-width:1024px){
   .modal-overlay{align-items:center}
@@ -227,6 +241,7 @@ select,input[type="number"]{min-height:40px}
     <div class="menu-item" onclick="App.switchTab(1)">👥 Orders</div>
     <div class="menu-item" onclick="App.switchTab(2)">🧾 Billing</div>
     <div class="menu-item" onclick="App.switchTab(3)">🚚 Delivery</div>
+	    <div class="menu-item" onclick="App.switchTab(4)">💳 Payment</div>
     <hr style="border-color:var(--border);margin:8px 16px;">
     <div style="padding:8px 20px;font-size:.75rem;color:var(--text2);">
       <div>📦 Products: <span id="s-count">0</span></div>
@@ -310,6 +325,22 @@ select,input[type="number"]{min-height:40px}
         <div id="delivery-content" class="tbl-wrap" style="max-height:none;"></div>
       </div>
     </div>
+
+	    <!-- Tab 4: Payment Accounting -->
+	    <div id="tab-4" class="fade-in" style="display:none;">
+	      <div class="card">
+	        <div class="card-h"><h2>💳 Payment Accounting</h2>
+	          <button class="btn btn-p btn-sm" onclick="App.resetPayment()">🔄 Reset</button>
+	        </div>
+	        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+	          <label style="font-weight:600;white-space:nowrap;">Customer:</label>
+	          <select id="payment-cust" onchange="App.renderPayment()" style="padding:8px 14px;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--surface);color:var(--text);min-width:180px;flex:1;">
+	            <option value="">-- Select --</option>
+	          </select>
+	        </div>
+	        <div id="payment-content"></div>
+	      </div>
+	    </div>
   </main>
 </div>
 
@@ -371,6 +402,7 @@ const App = {
     this.loadState();
     this.initDarkMode();
     this.initSidebar();
+	    this._loadPaymentData();
     this.initPWA();
     if(this.products.length>0) this.refreshAll();
     window.addEventListener('resize',()=>this.onResize());
@@ -586,12 +618,13 @@ const App = {
   // ========== Tabs ==========
   switchTab(idx){
     this.currentTab=idx;
-    for(let i=0;i<4;i++) document.getElementById('tab-'+i).style.display=i===idx?'':'none';
+    for(let i=0;i<5;i++) document.getElementById('tab-'+i).style.display=i===idx?'':'none';
     document.querySelectorAll('.sidebar .menu-item').forEach((el,i)=>el.classList.toggle('active',i===idx));
     if(idx===0) this.renderProducts();
     if(idx===1) this.renderOrders();
     if(idx===2) this.renderBillSelect();
     if(idx===3) this.renderDeliverySelect();
+	    if(idx===4) this.renderPaymentSelect();
     document.getElementById('main').scrollTop=0;
     if(isMobile()) this.closeSidebar();
   },
@@ -684,6 +717,7 @@ const App = {
     if(this.currentTab===1) this.renderOrders();
     if(this.currentTab===2) this.renderBillSelect();
     if(this.currentTab===3) this.renderDeliverySelect();
+	    if(this.currentTab===4) this.renderPaymentSelect();
   },
   updateSidebar(){
     document.getElementById('s-count').textContent=this.products.length;
@@ -960,7 +994,7 @@ const App = {
     let cust=document.getElementById('cust-select').value;
     if(!cust){this.toast('Please select a customer first','warn');return;}
     this.currentTab=2;
-    for(let i=0;i<4;i++) document.getElementById('tab-'+i).style.display=i===2?'':'none';
+    for(let i=0;i<5;i++) document.getElementById('tab-'+i).style.display=i===2?'':'none';
     document.querySelectorAll('.sidebar .menu-item').forEach((el,i)=>el.classList.toggle('active',i===2));
     let billSel=document.getElementById('bill-cust');
     billSel.innerHTML='<option value="">-- Select --</option>'+[...this.customers].map(c=>'<option value="'+this._esc(c)+'" '+(c===cust?'selected':'')+'>'+this._esc(c)+'</option>').join('');
@@ -1126,7 +1160,148 @@ const App = {
   /** JS string escape */
   _jsq(s){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")},
 
-  /** Help modal */
+	  // ========== Tab 4: Payment Accounting ==========
+	  renderPaymentSelect(){
+	    let sel=document.getElementById('payment-cust');
+	    sel.innerHTML='<option value="">-- Select --</option>'+[...this.customers].map(c=>'<option value="'+this._esc(c)+'">'+this._esc(c)+'</option>').join('');
+	    document.getElementById('payment-content').innerHTML='<div class="empty-state"><div class="icon">💳</div><p>Select a customer to view payment status</p></div>';
+	  },
+
+	  renderPayment(){
+	    let cust=document.getElementById('payment-cust').value;
+	    if(!cust){document.getElementById('payment-content').innerHTML='<div class="empty-state"><div class="icon">💳</div><p>Please select a customer</p></div>';return;}
+	    let items=this.products.filter(p=>this.getOrderQty(p,cust)>0);
+	    if(!items.length){document.getElementById('payment-content').innerHTML='<div class="empty-state"><p>No orders for this customer</p></div>';return;}
+
+	    let totalPkgs=items.length;
+	    let totalQty=0,totalAmt=0;
+	    items.forEach(p=>{let q=this.getOrderQty(p,cust);totalQty+=q;totalAmt+=q*p.unitPrice});
+	    totalAmt=Math.round(totalAmt*100)/100;
+
+	    // Load saved 8-slot payment array
+	    let paymentKey='pay_'+cust;
+	    let savedPayments=this._paymentData||{};
+	    let slots=savedPayments[paymentKey]||[0,0,0,0,0,0,0,0];
+	    while(slots.length<8)slots.push(0);
+	    if(slots.length>8)slots=slots.slice(0,8);
+
+	    let paidTotal=0;
+	    slots.forEach(v=>{paidTotal+=parseAmt(v||0);});
+	    paidTotal=Math.round(paidTotal*100)/100;
+	    let balance=Math.round((totalAmt-paidTotal)*100)/100;
+
+	    let h='';
+	    // --- Step 1: Order Summary Stats ---
+	    h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">'+
+	      '<div class="stat-card"><div class="sv">'+totalPkgs+'</div><div class="sl">📦 Total Packages</div></div>'+
+	      '<div class="stat-card"><div class="sv">'+totalQty.toLocaleString()+'</div><div class="sl">📋 Total Qty</div></div>'+
+	      '<div class="stat-card" style="border-left-color:var(--pri);"><div class="sv" style="color:var(--pri);">Sh.'+fmt(totalAmt)+'</div><div class="sl">💰 Total Amount Payable</div></div>'+
+	    '</div>';
+
+	    // --- Step 2: Order Detail Table ---
+	    h+='<h3 style="margin:0 0 8px 0;font-size:.85rem;">📋 Order Details</h3>'+
+	      '<div class="tbl-wrap" style="max-height:40vh;margin-bottom:16px;"><table class="ft"><thead><tr><th>#</th><th>Code</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>';
+	    items.forEach((p,i)=>{
+	      let q=this.getOrderQty(p,cust);
+	      let sub=q*p.unitPrice;
+	      h+='<tr><td>'+(i+1)+'</td><td>'+this._esc(p.code)+'</td><td class="amt">'+q.toLocaleString()+'</td><td class="amt">Sh.'+fmt(p.unitPrice)+'</td><td class="amt calc">Sh.'+fmt(sub)+'</td></tr>';
+	    });
+	    h+='<tr class="summary-row"><td colspan="2">Total</td><td class="amt">'+totalQty.toLocaleString()+'</td><td></td><td class="amt">Sh.'+fmt(totalAmt)+'</td></tr>';
+	    h+='</tbody></table></div>';
+
+	    // --- Step 3: Payment Records (8 slots) ---
+	    h+='<div style="background:var(--surface);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px;border:1px solid var(--border);">'+
+	      '<h3 style="margin:0 0 12px 0;font-size:.9rem;">💵 Payment Records</h3>'+
+	      '<table class="ft pay-tbl" style="min-width:auto;"><thead><tr><th style="width:32px;">#</th><th style="text-align:right;">Amount Paid</th></tr></thead><tbody>';
+
+	    for(let i=0;i<8;i++){
+	      let val=slots[i]||0;
+	      h+='<tr>'+
+	        '<td style="font-weight:600;color:var(--text);">'+(i+1)+'</td>'+
+	        '<td style="padding:4px 8px;text-align:right;">'+
+	          '<span style="font-size:.8rem;color:var(--text2);margin-right:6px;">Sh.</span>'+
+	          '<input class="qt pay-inp" type="number" value="'+(val>0?val:'')+'" min="0" step="0.01" placeholder="0.00" '+
+	            'onchange="App.updatePaymentSlot(\''+this._jsq(cust)+'\','+i+',this.value)" '+
+	            'onblur="App.updatePaymentSlot(\''+this._jsq(cust)+'\','+i+',this.value)" '+
+	            'onfocus="this.select()" inputmode="decimal" '+
+	            'style="max-width:130px;width:100%;text-align:right;font-weight:600;">'+
+	        '</td>'+
+	      '</tr>';
+	    }
+
+	    h+='</tbody></table></div>';
+
+	    // --- Step 4: Summary ---
+	    let diffLabel=balance>0?'Balance Due':(balance<0?'Overpaid':'Settled');
+	    let diffColor=balance>0?'var(--danger)':(balance<0?'var(--suc)':'var(--text2)');
+	    let absBal=Math.abs(balance);
+
+	    h+='<div style="background:var(--surface);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px;border:2px solid '+(balance===0?'var(--suc)':(balance>0?'var(--danger)':'var(--warn)'))+';">'+
+	      '<table class="ft pay-sum" style="min-width:auto;"><tbody>'+
+	        '<tr>'+
+	          '<td style="text-align:right;font-weight:700;font-size:.9rem;width:50%;">Total Paid</td>'+
+	          '<td class="amt" style="font-weight:800;font-size:1rem;color:'+(paidTotal>0?'var(--suc)':'var(--text2)')+';">Sh.'+fmt(paidTotal)+'</td>'+
+	        '</tr>'+
+	        '<tr>'+
+	          '<td style="text-align:right;font-weight:700;font-size:.9rem;color:'+diffColor+';">'+diffLabel+'</td>'+
+	          '<td class="amt" style="font-weight:800;font-size:1rem;color:'+diffColor+';">Sh.'+fmt(absBal)+'</td>'+
+	        '</tr>'+
+	      '</tbody></table>'+
+	    '</div>';
+
+	    document.getElementById('payment-content').innerHTML=h;
+	  },
+
+	  /** Update a single payment slot (0-7) */
+	  updatePaymentSlot(cust,idx,val){
+	    if(!this._paymentData)this._paymentData={};
+	    let key='pay_'+cust;
+	    if(!this._paymentData[key])this._paymentData[key]=[0,0,0,0,0,0,0,0];
+	    let amt=parseAmt(val);
+	    if(isNaN(amt)||amt<0)amt=0;
+	    this._paymentData[key][idx]=Math.round(amt*100)/100;
+	    while(this._paymentData[key].length>0&&this._paymentData[key][this._paymentData[key].length-1]===0){
+	      this._paymentData[key].pop();
+	    }
+	    if(!this._paymentData[key].length)delete this._paymentData[key];
+	    this._savePaymentData();
+	    this.renderPayment();
+	  },
+
+	  /** Reset all payment slots */
+	  resetPayment(){
+	    let cust=document.getElementById('payment-cust').value;
+	    if(!cust){this.toast('Please select a customer first','warn');return;}
+	    if(!confirm('Clear all payment records for "'+cust+'"? This cannot be undone.'))return;
+	    let key='pay_'+cust;
+	    if(this._paymentData)delete this._paymentData[key];
+	    this._savePaymentData();
+	    this.renderPayment();
+	    this.toast('🔄 Payment records cleared for '+this._esc(cust),'suc');
+	  },
+
+	  	  _savePaymentData(){
+	    try{
+	      localStorage.setItem('ios_payments',JSON.stringify(this._paymentData||{}));
+	    }catch(e){}
+	  },
+
+	  _loadPaymentData(){
+	    try{
+	      let raw=localStorage.getItem('ios_payments');
+	      if(raw)this._paymentData=JSON.parse(raw);
+	      else this._paymentData={};
+	      // Migrate old-format payment objects to plain numbers
+	      for(let k in this._paymentData){
+	        let arr=this._paymentData[k];
+	        if(arr.length&&typeof arr[0]==='object'&&arr[0].amount!==undefined){
+	          this._paymentData[k]=arr.map(x=>parseAmt(x.amount));
+	        }
+	      }
+	    }catch(e){this._paymentData={};}
+	  },
+
+	  /** Help modal */
   showHelp(){
     let h='<div class="modal-overlay" onclick="this.remove()"><div class="modal fade-in" onclick="event.stopPropagation()">'+
       '<div class="modal-h"><h3>❓ Help (Staff Edition)</h3><button class="btn btn-g btn-sm" onclick="this.closest(\'.modal-overlay\').remove()">✕</button></div>'+
