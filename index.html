@@ -263,6 +263,7 @@ select,input[type="number"]{min-height:40px}
     <div class="menu-item" onclick="App.switchTab(2)">🧾 Billing</div>
     <div class="menu-item" onclick="App.switchTab(3)">🚚 Delivery</div>
 	    <div class="menu-item" onclick="App.switchTab(4)">💳 Payment</div>
+	    <div class="menu-item" onclick="App.switchTab(5)">📊 Work Report</div>
     <hr style="border-color:var(--border);margin:8px 16px;">
     <div style="padding:8px 20px;font-size:.75rem;color:var(--text2);">
       <div>📦 Products: <span id="s-count">0</span></div>
@@ -362,6 +363,22 @@ select,input[type="number"]{min-height:40px}
 	        <div id="payment-content"></div>
 	      </div>
 	    </div>
+
+    <!-- Tab 5: Work Report -->
+    <div id="tab-5" class="fade-in" style="display:none;">
+      <div class="card">
+        <div class="card-h"><h2>📊 Work Report</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input type="date" id="wr-date" onchange="App.renderWorkReportPreview()" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:var(--surface);color:var(--text);min-height:36px;">
+            <button class="btn btn-p btn-sm" onclick="App.exportWorkReport()">⬇ Download Excel</button>
+          </div>
+        </div>
+        <p style="font-size:.78rem;color:var(--text2);margin:0 0 10px 0;">✅ Tick the customers to include in the daily report — billing orders and payment records are merged into one master Excel file.</p>
+        <div id="wr-cust-list"></div>
+        <div id="wr-stats"></div>
+        <div id="wr-preview"></div>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -639,13 +656,14 @@ const App = {
   // ========== Tabs ==========
   switchTab(idx){
     this.currentTab=idx;
-    for(let i=0;i<5;i++) document.getElementById('tab-'+i).style.display=i===idx?'':'none';
+    for(let i=0;i<6;i++) document.getElementById('tab-'+i).style.display=i===idx?'':'none';
     document.querySelectorAll('.sidebar .menu-item').forEach((el,i)=>el.classList.toggle('active',i===idx));
     if(idx===0) this.renderProducts();
     if(idx===1) this.renderOrders();
     if(idx===2) this.renderBillSelect();
     if(idx===3) this.renderDeliverySelect();
 	    if(idx===4) this.renderPaymentSelect();
+    if(idx===5) this.renderWorkReport();
     document.getElementById('main').scrollTop=0;
     if(isMobile()) this.closeSidebar();
   },
@@ -739,6 +757,7 @@ const App = {
     if(this.currentTab===2) this.renderBillSelect();
     if(this.currentTab===3) this.renderDeliverySelect();
 	    if(this.currentTab===4) this.renderPaymentSelect();
+    if(this.currentTab===5) this.renderWorkReport();
   },
   updateSidebar(){
     document.getElementById('s-count').textContent=this.products.length;
@@ -1015,7 +1034,7 @@ const App = {
     let cust=document.getElementById('cust-select').value;
     if(!cust){this.toast('Please select a customer first','warn');return;}
     this.currentTab=2;
-    for(let i=0;i<5;i++) document.getElementById('tab-'+i).style.display=i===2?'':'none';
+    for(let i=0;i<6;i++) document.getElementById('tab-'+i).style.display=i===2?'':'none';
     document.querySelectorAll('.sidebar .menu-item').forEach((el,i)=>el.classList.toggle('active',i===2));
     let billSel=document.getElementById('bill-cust');
     billSel.innerHTML='<option value="">-- Select --</option>'+[...this.customers].map(c=>'<option value="'+this._esc(c)+'" '+(c===cust?'selected':'')+'>'+this._esc(c)+'</option>').join('');
@@ -1318,6 +1337,173 @@ const App = {
 	    }catch(e){this._paymentData={};}
 	  },
 
+	  // ========== Tab 5: Work Report (daily summary → Excel) ==========
+	  /** Local date string YYYY-MM-DD */
+	  todayStr(){let d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')},
+
+	  /** Billed amount for one customer (sum of order qty × unit price) */
+	  getCustBilled(cust){
+	    let t=0;
+	    this.products.forEach(p=>{let q=this.getOrderQty(p,cust);if(q>0)t+=q*p.unitPrice;});
+	    return Math.round(t*100)/100;
+	  },
+
+	  /** Paid amount for one customer (sum of payment slots) */
+	  getCustPaid(cust){
+	    let slots=(this._paymentData||{})['pay_'+cust]||[];
+	    let t=0;slots.forEach(v=>{t+=parseAmt(v||0);});
+	    return Math.round(t*100)/100;
+	  },
+
+	  /** Currently ticked customers (in customer-set order) */
+	  wrSelectedCusts(){
+	    let sel=this._wrSelected||{};
+	    return [...this.customers].filter(c=>sel[c]);
+	  },
+
+	  renderWorkReport(){
+	    let dateEl=document.getElementById('wr-date');
+	    if(dateEl&&!dateEl.value)dateEl.value=this.todayStr();
+	    if(!this._wrSelected)this._wrSelected={};
+	    let custs=[...this.customers];
+	    let listEl=document.getElementById('wr-cust-list');
+	    if(!custs.length){
+	      listEl.innerHTML='<div class="empty-state"><div class="icon">📊</div><p>No customers yet</p></div>';
+	      document.getElementById('wr-stats').innerHTML='';
+	      document.getElementById('wr-preview').innerHTML='';
+	      return;
+	    }
+	    // Customer checklist — Qty / Billed per customer
+	    let h='<div class="tbl-wrap" style="max-height:none;"><table class="ft"><thead><tr><th>☑</th><th>Customer</th><th>Qty</th><th>Billed</th></tr></thead><tbody>';
+	    custs.forEach(c=>{
+	      let billed=this.getCustBilled(c);
+	      let checked=this._wrSelected[c]?'checked':'';
+	      h+='<tr>'+
+	        '<td><input type="checkbox" style="width:18px;height:18px;accent-color:var(--pri);" '+checked+' onchange="App.wrToggleCust(\''+this._jsq(c)+'\',this.checked)"></td>'+
+	        '<td style="color:var(--text);font-weight:600;">'+this._esc(c)+'</td>'+
+	        '<td class="amt">'+this.getCustQty(c).toLocaleString()+'</td>'+
+	        '<td class="amt">Sh.'+fmt(billed)+'</td>'+
+	      '</tr>';
+	    });
+	    h+='</tbody></table></div>'+
+	      '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--text2);">'+
+	      '<input type="checkbox" id="wr-select-all" style="width:16px;height:16px;accent-color:var(--pri);" onchange="App.wrSelectAll()"> <span>Select all customers</span></div>';
+	    listEl.innerHTML=h;
+	    this.renderWorkReportPreview();
+	  },
+
+	  /** Tick / untick one customer */
+	  wrToggleCust(cust,checked){
+	    if(!this._wrSelected)this._wrSelected={};
+	    if(checked)this._wrSelected[cust]=true;
+	    else delete this._wrSelected[cust];
+	    this.renderWorkReportPreview();
+	  },
+
+	  /** Select / clear all customers */
+	  wrSelectAll(){
+	    let on=document.getElementById('wr-select-all')?.checked;
+	    this._wrSelected={};
+	    if(on)this.customers.forEach(c=>{this._wrSelected[c]=true;});
+	    this.renderWorkReport();
+	  },
+
+	  /** Master table preview — customer blocks (A–F) with payment records under each total */
+	  renderWorkReportPreview(){
+	    let custs=this.wrSelectedCusts();
+	    let date=document.getElementById('wr-date').value||this.todayStr();
+	    let p=date.split('-');
+	    let dateStr=(+p[1])+'/'+(+p[2])+'/'+p[0];
+	    let sa=document.getElementById('wr-select-all');
+	    if(sa){
+	      sa.checked=this.customers.size>0&&custs.length===this.customers.size;
+	      sa.indeterminate=custs.length>0&&custs.length<this.customers.size;
+	    }
+	    if(!custs.length){
+	      document.getElementById('wr-stats').innerHTML='';
+	      document.getElementById('wr-preview').innerHTML='<div class="empty-state"><div class="icon">📊</div><p>Tick customers above to build the master table</p></div>';
+	      return;
+	    }
+	    let billed=0,paid=0;
+	    custs.forEach(c=>{billed+=this.getCustBilled(c);paid+=this.getCustPaid(c);});
+	    billed=Math.round(billed*100)/100;paid=Math.round(paid*100)/100;
+	    let balG=Math.round((billed-paid)*100)/100;
+
+	    // Stats
+	    document.getElementById('wr-stats').innerHTML=
+	      '<div class="stats-grid">'+
+	      '<div class="stat-card"><div class="sv">'+custs.length+'</div><div class="sl">👥 Selected</div></div>'+
+	      '<div class="stat-card"><div class="sv">Sh.'+fmt(billed)+'</div><div class="sl">🧾 Billed</div></div>'+
+	      '<div class="stat-card suc"><div class="sv">Sh.'+fmt(paid)+'</div><div class="sl">💵 Paid</div></div>'+
+	      '<div class="stat-card '+(balG>0?'dan':'suc')+'"><div class="sv">Sh.'+fmt(Math.abs(balG))+'</div><div class="sl">⚖️ '+(balG>0?'Due':'Overpaid')+'</div></div>'+
+	      '</div>';
+
+	    // Customer blocks (template A–F); payment records under each table's total
+	    let h='<div class="payment-panel">';
+	    custs.forEach(c=>{
+	      let items=this.products.filter(p2=>this.getOrderQty(p2,c)>0);
+	      let qSum=0,aSum=0;
+	      h+='<div style="font-weight:700;color:var(--pri);padding:6px 0 2px;">'+dateStr+'  '+this._esc(c)+'</div>';
+	      h+='<div class="tbl-wrap" style="max-height:none;"><table class="ft"><thead><tr><th>Item Code</th><th>Product Name</th><th>Single Price</th><th>Qty</th><th>Amount</th></tr></thead><tbody>';
+	      items.forEach(p2=>{
+	        let q=this.getOrderQty(p2,c);
+	        let a=Math.round(q*p2.unitPrice*100)/100;
+	        qSum+=q;aSum+=a;
+	        h+='<tr><td>'+this._esc(p2.code)+'</td><td>'+this._esc(p2.name)+'</td><td class="amt">'+fmt(p2.unitPrice)+'</td><td class="amt">'+q.toLocaleString()+'</td><td class="amt calc">Sh.'+fmt(a)+'</td></tr>';
+	      });
+	      if(!items.length)h+='<tr><td colspan="5" style="color:var(--text2);">No orders</td></tr>';
+	      h+='<tr class="summary-row"><td>Total</td><td></td><td></td><td class="amt">'+qSum.toLocaleString()+'</td><td class="amt">Sh.'+fmt(aSum)+'</td></tr>';
+	      let slots=(this._paymentData||{})['pay_'+c]||[];
+	      slots.forEach((v,i)=>{
+	        let amt=parseAmt(v||0);
+	        if(amt>0)h+='<tr><td colspan="4" style="text-align:right;color:var(--text2);font-size:.7rem;">💵 Payment '+(i+1)+'</td><td class="amt amt-pos" style="font-size:.7rem;">Sh.'+fmt(amt)+'</td></tr>';
+	      });
+	      h+='</tbody></table></div>';
+	      h+='<div style="height:10px;"></div>';
+	    });
+	    h+='</div>';
+	    document.getElementById('wr-preview').innerHTML=h;
+	  },
+
+	  /** Export the daily report to Excel — follows the 8月13出单.xlsx template (sheet "Daily Sales") */
+	  exportWorkReport(){
+	    let custs=this.wrSelectedCusts();
+	    if(!custs.length){this.toast('Please select at least one customer','warn');return;}
+	    let date=document.getElementById('wr-date').value||this.todayStr();
+	    let p=date.split('-');
+	    let dateStr=(+p[1])+'/'+(+p[2])+'/'+p[0];
+	    let rows=[];
+	    // Customer blocks (A–F); payment records under each table's total
+	    custs.forEach(c=>{
+	      let items=this.products.filter(pr=>this.getOrderQty(pr,c)>0);
+	      let qSum=0,aSum=0;
+	      items.forEach(pr=>{
+	        let q=this.getOrderQty(pr,c);
+	        qSum+=q;aSum+=Math.round(q*pr.unitPrice*100)/100;
+	      });
+	      rows.push([dateStr+'  '+c,'','','','','']);
+	      rows.push(['Item Code','Product Name','Single Price','Qty','Amount','']);
+	      items.forEach(pr=>{
+	        let q=this.getOrderQty(pr,c);
+	        rows.push([pr.code,pr.name,pr.unitPrice,q,Math.round(q*pr.unitPrice*100)/100,'']);
+	      });
+	      if(!items.length)rows.push(['No orders','','','','','']);
+	      rows.push(['','Total','',qSum,Math.round(aSum*100)/100,'']);
+	      let slots=(this._paymentData||{})['pay_'+c]||[];
+	      slots.forEach((v,i)=>{
+	        let amt=parseAmt(v||0);
+	        if(amt>0)rows.push(['','','','',amt,'Payment '+(i+1)]);
+	      });
+	      rows.push(['','','','','','']); // blank row between customers
+	    });
+	    let ws=XLSX.utils.aoa_to_sheet(rows);
+	    ws['!cols']=[{wch:20.8},{wch:36.8},{wch:14.8},{wch:6.8},{wch:14.8},{wch:34.4}];
+	    let wb=XLSX.utils.book_new();
+	    XLSX.utils.book_append_sheet(wb,ws,'Daily Sales');
+	    XLSX.writeFile(wb,(+p[1])+'月'+(+p[2])+'出单.xlsx');
+	    this.toast('✅ Work report exported','suc');
+	  },
+
 	  /** Help modal */
   showHelp(){
     let h='<div class="modal-overlay" onclick="this.remove()"><div class="modal fade-in" onclick="event.stopPropagation()">'+
@@ -1327,7 +1513,8 @@ const App = {
         '<ol style="padding-left:18px;line-height:1.8;">'+
           '<li><strong>View Products</strong> — Check inventory, orders and balance on the Products page</li>'+
           '<li><strong>Manage Orders</strong> — Select a customer, view and edit order quantities</li>'+
-          '<li><strong>Export Bills</strong> — Generate professional bills with Excel export and printing</li></ol>'+
+          '<li><strong>Export Bills</strong> — Generate professional bills with Excel export and printing</li>'+
+          '<li><strong>Work Report</strong> — Tick customers and download the daily Excel summary (orders + payments)</li></ol>'+
         '<h4>📱 Mobile Tips</h4><ul style="padding-left:18px;line-height:1.8;">'+
           '<li>Tap <strong>☰</strong> top-left to open the navigation menu</li>'+
           '<li>Tables can be <strong>swiped horizontally</strong> to see more columns</li>'+
@@ -1352,6 +1539,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   console.log('  - 👥 Customer order management');
   console.log('  - 🧾 Bill preview & export');
   console.log('  - 🚚 Delivery note (货号 / Qty / Total Qty)');
+  console.log('  - 📊 Work Report (daily Excel summary)');
 });
 </script>
 </body>
