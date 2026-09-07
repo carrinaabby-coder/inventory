@@ -132,6 +132,9 @@ select,input[type="number"]{min-height:40px}
 .summary-row{background:var(--pri-bg)!important;font-weight:700}
 .summary-row td{color:var(--pri)!important;font-size:.82rem}
 
+/* Search hit highlight (Orders tab) */
+tr.row-hit td{background:var(--warn-bg)!important;color:var(--text)!important;font-weight:600}
+
 /* ========== Responsive ========== */
 
 /* Tablet & below: show hamburger */
@@ -228,7 +231,7 @@ select,input[type="number"]{min-height:40px}
 
 /* Print */
 @media print{
-  .navbar,.sidebar,.sidebar-overlay,.btn,.filter-bar,.toast-container,.hamburger,.sb-close{display:none!important}
+  .navbar,.sidebar,.sidebar-overlay,.btn,.filter-bar,.toast-container,.hamburger,.sb-close,#order-search-bar{display:none!important}
   .main-content{padding:0;margin:0;overflow:visible}
   .card{box-shadow:none;border:1px solid #ccc;break-inside:avoid;padding:8px;margin-bottom:8px}
   .tbl-wrap{overflow:visible;max-height:none}
@@ -310,6 +313,16 @@ select,input[type="number"]{min-height:40px}
           </div>
         </div>
         <div class="stats-grid" id="order-stats"></div>
+        <!-- Code search — type letters to jump to matching row -->
+        <div id="order-search-bar" style="display:none;margin-bottom:10px;">
+          <div style="position:relative;">
+            <input id="order-search" type="text" placeholder="🔍 Search code (e.g. P001)" autocomplete="off"
+              oninput="App.searchOrder(this.value)"
+              style="width:100%;padding:10px 40px 10px 12px;border:1px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--surface);color:var(--text);min-height:42px;outline:none;">
+            <button type="button" onclick="App.clearOrderSearch()" title="Clear" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:1rem;color:var(--text2);cursor:pointer;padding:8px 10px;line-height:1;">✕</button>
+          </div>
+          <div id="order-search-msg" style="display:none;font-size:.72rem;color:var(--warn);margin-top:4px;">⚠️ No matching code found</div>
+        </div>
         <div class="tbl-wrap" id="order-table-wrap">
           <div id="order-table"></div>
         </div>
@@ -952,6 +965,8 @@ const App = {
     let custs=[...this.customers];
     sel.innerHTML='<option value="">-- Select Customer --</option>'+custs.map(c=>'<option value="'+this._esc(c)+'" '+(sel.value===c?'selected':'')+'>'+this._esc(c)+'</option>').join('');
     let cust=sel.value;
+    let sb=document.getElementById('order-search-bar');
+    if(sb)sb.style.display=(cust&&this.products.length)?'block':'none';
     if(!cust){
       document.getElementById('order-table').innerHTML='<div class="empty-state"><div class="icon">👥</div><p>Select a customer to view orders</p></div>';
       document.getElementById('order-stats').innerHTML='';
@@ -973,7 +988,7 @@ const App = {
     ps.forEach((p,i)=>{
       let q=this.getOrderQty(p,cust);
       let rowStyle=q>0?'':'opacity:0.45';
-      h+='<tr style="'+rowStyle+'">'+
+      h+='<tr style="'+rowStyle+'" data-code="'+this._esc(p.code)+'">'+
         '<td style="color:var(--text);font-weight:500">'+this._esc(p.code)+'</td>'+
         '<td style="white-space:nowrap">'+
           '<input class="qt" type="number" value="'+q+'" min="0" step="1" '+
@@ -986,6 +1001,41 @@ const App = {
     h+='<tr class="summary-row"><td>Total</td><td class="amt">'+totalQty.toLocaleString()+'</td></tr>';
     h+='</tbody></table>';
     document.getElementById('order-table').innerHTML=h;
+    // Re-apply active search after re-render (keeps highlight when editing qty)
+    let sq=document.getElementById('order-search');
+    if(sq&&sq.value.trim())this.searchOrder(sq.value);
+  },
+
+  /** Search box — jump to the first row whose code matches (case-insensitive) */
+  searchOrder(q){
+    q=(q||'').trim().toLowerCase();
+    let wrap=document.getElementById('order-table-wrap');
+    let rows=wrap?wrap.querySelectorAll('tbody tr:not(.summary-row)'):[];
+    let msg=document.getElementById('order-search-msg');
+    let first=null;
+    rows.forEach(r=>{
+      let code=(r.getAttribute('data-code')||'').toLowerCase();
+      let m=!!q&&code.includes(q);
+      r.classList.toggle('row-hit',m);
+      if(m&&!first)first=r;
+    });
+    if(!q){if(msg)msg.style.display='none';return;}
+    if(first){
+      if(msg)msg.style.display='none';
+      // Scroll so the row sits just under the sticky header
+      let th=wrap.querySelector('thead');
+      let thH=th?th.offsetHeight:0;
+      wrap.scrollTo({top:Math.max(0,first.offsetTop-thH-4),behavior:'smooth'});
+    }else if(msg){
+      msg.style.display='block';
+    }
+  },
+
+  /** Clear the code search box */
+  clearOrderSearch(){
+    let inp=document.getElementById('order-search');
+    if(inp){inp.value='';inp.focus();}
+    this.searchOrder('');
   },
 
   updateOrder(pi,cust,qty){
