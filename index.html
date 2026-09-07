@@ -317,7 +317,7 @@ tr.row-hit td{background:var(--warn-bg)!important;color:var(--text)!important;fo
         <div id="order-search-bar" style="display:none;margin-bottom:10px;">
           <div style="position:relative;">
             <input id="order-search" type="text" placeholder="🔍 Search code (e.g. P001)" autocomplete="off"
-              oninput="App.searchOrder(this.value)"
+              oninput="App.onOrderSearchInput(this.value)"
               style="width:100%;padding:10px 40px 10px 12px;border:1px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--surface);color:var(--text);min-height:42px;outline:none;">
             <button type="button" onclick="App.clearOrderSearch()" title="Clear" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:1rem;color:var(--text2);cursor:pointer;padding:8px 10px;line-height:1;">✕</button>
           </div>
@@ -961,12 +961,14 @@ const App = {
 
   // ========== Tab 1: Customer Orders (editable qty) ==========
   renderOrders(){
+    this._orderRows=[]; // rebuilt below — search reads only from this cache
     let sel=document.getElementById('cust-select');
     let custs=[...this.customers];
     sel.innerHTML='<option value="">-- Select Customer --</option>'+custs.map(c=>'<option value="'+this._esc(c)+'" '+(sel.value===c?'selected':'')+'>'+this._esc(c)+'</option>').join('');
     let cust=sel.value;
+    // Always show the search bar — even before any customer is added
     let sb=document.getElementById('order-search-bar');
-    if(sb)sb.style.display=(cust&&this.products.length)?'block':'none';
+    if(sb)sb.style.display='block';
     if(!cust){
       document.getElementById('order-table').innerHTML='<div class="empty-state"><div class="icon">👥</div><p>Select a customer to view orders</p></div>';
       document.getElementById('order-stats').innerHTML='';
@@ -1001,38 +1003,53 @@ const App = {
     h+='<tr class="summary-row"><td>Total</td><td class="amt">'+totalQty.toLocaleString()+'</td></tr>';
     h+='</tbody></table>';
     document.getElementById('order-table').innerHTML=h;
+    // Cache rows + codes once per render so searching does no DOM reads per keystroke
+    let ow=document.getElementById('order-table-wrap');
+    if(ow)ow.querySelectorAll('tbody tr:not(.summary-row)').forEach(r=>{
+      this._orderRows.push({row:r,code:(r.getAttribute('data-code')||'').toLowerCase(),top:r.offsetTop});
+    });
     // Re-apply active search after re-render (keeps highlight when editing qty)
     let sq=document.getElementById('order-search');
     if(sq&&sq.value.trim())this.searchOrder(sq.value);
   },
 
-  /** Search box — jump to the first row whose code matches (case-insensitive) */
+  /** Debounced input handler — only scans rows after typing pauses (kills per-keystroke lag) */
+  onOrderSearchInput(v){
+    clearTimeout(this._orderSearchT);
+    this._orderSearchT=setTimeout(()=>this.searchOrder(v),120);
+  },
+
+  /** Search box — highlight rows whose code matches (case-insensitive) & jump to first hit */
   searchOrder(q){
     q=(q||'').trim().toLowerCase();
-    let wrap=document.getElementById('order-table-wrap');
-    let rows=wrap?wrap.querySelectorAll('tbody tr:not(.summary-row)'):[];
     let msg=document.getElementById('order-search-msg');
+    let rows=this._orderRows||[];
     let first=null;
-    rows.forEach(r=>{
-      let code=(r.getAttribute('data-code')||'').toLowerCase();
-      let m=!!q&&code.includes(q);
-      r.classList.toggle('row-hit',m);
-      if(m&&!first)first=r;
-    });
+    for(let i=0;i<rows.length;i++){
+      let it=rows[i];
+      let m=!!q&&it.code.includes(q);
+      it.row.classList.toggle('row-hit',m);
+      if(m&&!first)first=it;
+    }
     if(!q){if(msg)msg.style.display='none';return;}
     if(first){
       if(msg)msg.style.display='none';
-      // Scroll so the row sits just under the sticky header
-      let th=wrap.querySelector('thead');
-      let thH=th?th.offsetHeight:0;
-      wrap.scrollTo({top:Math.max(0,first.offsetTop-thH-4),behavior:'smooth'});
+      // Instant jump — smooth scroll per keystroke caused stutter; cached top avoids layout reads
+      let wrap=document.getElementById('order-table-wrap');
+      if(wrap){
+        let th=wrap.querySelector('thead');
+        let thH=th?th.offsetHeight:0;
+        wrap.scrollTop=Math.max(0,first.top-thH-4);
+      }
     }else if(msg){
-      msg.style.display='block';
+      // Only warn when there is a table to search (no customer selected → stay quiet)
+      msg.style.display=rows.length?'block':'none';
     }
   },
 
   /** Clear the code search box */
   clearOrderSearch(){
+    clearTimeout(this._orderSearchT);
     let inp=document.getElementById('order-search');
     if(inp){inp.value='';inp.focus();}
     this.searchOrder('');
@@ -1041,7 +1058,8 @@ const App = {
   updateOrder(pi,cust,qty){
     let p=this.products[pi];if(!p)return;
     if(!p.orders)p.orders={};
-    let q=parseAmt(qty);
+    // Force integer quantity — fractional input would corrupt balance math
+    let q=Math.floor(parseAmt(qty));
     if(q<=0) delete p.orders[cust];
     else p.orders[cust]=q;
     if(q>0) this.customers.add(cust);
@@ -1133,14 +1151,18 @@ const App = {
     // Number-to-words (English)
     function toWords(num){
       if(num===0)return'Zero Shillings';
-      let n=Math.round(num*100);
+      // EPSILON guards the float-carry edge (e.g. 1.005*100 = 100.4999… → 100)
+      let n=Math.round((num+Number.EPSILON)*100);
       let sl=Math.floor(n/100),ct=Math.floor((n%100)/10),pt=n%10;
       let ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
       let tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
       function toEng(x){
         if(x<20)return ones[x];
-        let t=Math.floor(x/10),o=x%10;
-        return tens[t]+(o>0?'-'+ones[o]:'');
+        if(x<100){let t=Math.floor(x/10),o=x%10;return tens[t]+(o>0?'-'+ones[o]:'');}
+        if(x<1000){let h=Math.floor(x/100),r=x%100;return ones[h]+' Hundred'+(r>0?' and '+toEng(r):'');}
+        if(x<1000000){let th=Math.floor(x/1000),r=x%1000;return toEng(th)+' Thousand'+(r>0?(r<100?' and ':' ')+toEng(r):'');}
+        let m=Math.floor(x/1000000),r=x%1000000;
+        return toEng(m)+' Million'+(r>0?(r<100?' and ':' ')+toEng(r):'');
       }
       let s='';
       if(sl>0)s+=toEng(sl)+' Shilling'+(sl>1?'s':'');
